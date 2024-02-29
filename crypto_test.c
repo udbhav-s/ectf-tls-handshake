@@ -12,43 +12,47 @@
 #include <wolfssl/wolfcrypt/asn_public.h>
 #include <wolfssl/wolfcrypt/integer.h>
 
-#define ECC_CURVE			ECC_SECP256R1
-#define ECC_KEY_LEN			32
+#define ECC_CURVE ECC_SECP256R1
+#define ECC_KEY_LEN 32
 
-#define COMPR_KEY_SIZE		33
-#define COMPR_KEY_BUFSIZE	36 	// To avoid struct padding issues, just in case
+#define COMPR_KEY_SIZE 33
+#define COMPR_KEY_BUFSIZE 36 // To avoid struct padding issues, just in case
 
-#define PUBKEY_BUF_LEN		ECC_BUFSIZE
-#define PUBKEY_LEN 			ECC_MAXSIZE+1
+#define PUBKEY_BUF_LEN ECC_BUFSIZE
+#define PUBKEY_LEN ECC_MAXSIZE + 1
 
-#define POINT_SIZE			32
-#define CERT_DATA_SIZE		2 * POINT_SIZE + 4
-#define ECC_SIG_SIZE 		72
+#define POINT_SIZE 32
+#define CERT_DATA_SIZE 2 * POINT_SIZE + 4
+#define ECC_SIG_SIZE 72
 
-#define SHARED_KEY_SIZE		32
+#define SHARED_KEY_SIZE 32
 
-#define AP_TAG				0xffffffff
+#define AP_TAG 0xffffffff
 
-typedef struct cert_data {
+typedef struct cert_data
+{
 	byte pubkey_x[32];
 	byte pubkey_y[32];
 	word32 tag;
 } cert_data;
 
-typedef struct hello {
+typedef struct hello
+{
 	// Compressed ANSI X9.63 keys
 	byte pubkey[COMPR_KEY_BUFSIZE];
 	byte dh_pubkey[COMPR_KEY_BUFSIZE];
 } hello;
 
-typedef struct signed_hello {
+typedef struct signed_hello
+{
 	hello hi;
 	byte hello_sig[ECC_SIG_SIZE];
 	word32 hello_sig_size;
 } signed_hello;
 
 // Sent by the AP to the Component as the first message
-typedef struct signed_hello_with_cert {
+typedef struct signed_hello_with_cert
+{
 	signed_hello sh;
 
 	byte cert_sig[ECC_SIG_SIZE];
@@ -56,79 +60,92 @@ typedef struct signed_hello_with_cert {
 } signed_hello_with_cert;
 
 // Response from the Component to the AP: contains the same data except with a signed challenge (DH pubkey)
-typedef struct signed_hello_with_cert_and_chal {
-	signed_hello_with_cert shc; 
+typedef struct signed_hello_with_cert_and_chal
+{
+	signed_hello_with_cert shc;
 
 	byte chal_sig[ECC_SIG_SIZE];
 	word32 chal_sig_size;
 } signed_hello_with_cert_and_chal;
 
 // Sent back by the AP to the Component as AP's challenge-response to finish the verification
-typedef struct signed_chal {
+typedef struct signed_chal
+{
 	byte chal_sig[ECC_SIG_SIZE];
 	word32 chal_sig_size;
 } signed_chal;
 
-int make_ecc_key(ecc_key* key, WC_RNG* rng) {
+int make_ecc_key(ecc_key *key, WC_RNG *rng)
+{
 	int ret = wc_ecc_init(key);
-	if (ret == 0) {
+	if (ret == 0)
+	{
 		ret = wc_ecc_make_key_ex(rng, ECC_KEY_LEN, key, ECC_CURVE);
 	}
 
 	return ret;
 }
 
-int load_ap_private_key(ecc_key* key) {
+int load_ap_private_key(ecc_key *key)
+{
 	int ret = wc_ecc_init(key);
-	if (ret == 0) {
+	if (ret == 0)
+	{
 		print_debug("Importing AP private key from der...");
 
-        byte key_der[] = AP_PRIVKEY_DER;
-        word32 idx = 0;
-        ret = wc_EccPrivateKeyDecode(key_der, &idx, key, (word32) sizeof(key_der));
+		byte key_der[] = AP_PRIVKEY_DER;
+		word32 idx = 0;
+		ret = wc_EccPrivateKeyDecode(key_der, &idx, key, (word32)sizeof(key_der));
 	}
 
 	return ret;
 }
 
-int load_comp_private_key(ecc_key* key) {
+int load_comp_private_key(ecc_key *key)
+{
 	int ret = wc_ecc_init(key);
-	if (ret == 0) {
+	if (ret == 0)
+	{
 		print_debug("Importing Component private key from der...");
 
-        byte key_der[] = COMP_PRIVKEY_DER;
-        word32 idx = 0;
-        ret = wc_EccPrivateKeyDecode(key_der, &idx, key, (word32) sizeof(key_der));
+		byte key_der[] = COMP_PRIVKEY_DER;
+		word32 idx = 0;
+		ret = wc_EccPrivateKeyDecode(key_der, &idx, key, (word32)sizeof(key_der));
 	}
 
 	return ret;
 }
 
-int load_host_public_key(ecc_key* key) {
+int load_host_public_key(ecc_key *key)
+{
 	int ret = wc_ecc_init(key);
-	if (ret == 0) {
+	if (ret == 0)
+	{
 		print_debug("Importing host public key from der...");
 
-        byte key_der[] = HOST_PUBKEY_DER;
-        word32 idx = 0;
-        ret = wc_EccPublicKeyDecode(key_der, &idx, key, (word32) sizeof(key_der));
+		byte key_der[] = HOST_PUBKEY_DER;
+		word32 idx = 0;
+		ret = wc_EccPublicKeyDecode(key_der, &idx, key, (word32)sizeof(key_der));
 	}
 
 	return ret;
 }
 
-int construct_device_cert_data(cert_data* cert, ecc_key* device_key, word32 dev_id) {
+int construct_device_cert_data(cert_data *cert, ecc_key *device_key, word32 dev_id)
+{
 	int ret = 0;
 
 	// mp_to_unsigned_bin stores point in buffer in big-endian format
 
 	byte point_x[POINT_SIZE];
-	ret = mp_to_unsigned_bin((mp_int *) &((device_key->pubkey).x), point_x);
-	if (ret != 0) return ret;
+	ret = mp_to_unsigned_bin((mp_int *)&((device_key->pubkey).x), point_x);
+	if (ret != 0)
+		return ret;
 
 	byte point_y[POINT_SIZE];
-	ret = mp_to_unsigned_bin((mp_int *) &((device_key->pubkey).y), point_y);
-	if (ret != 0) return ret;
+	ret = mp_to_unsigned_bin((mp_int *)&((device_key->pubkey).y), point_y);
+	if (ret != 0)
+		return ret;
 
 	// memcpy(cert->pubkey_x, (ap_key->pubkey).x[0].dp, POINT_SIZE);
 	// memcpy(cert->pubkey_y, (ap_key->pubkey).y[0].dp, POINT_SIZE);
@@ -141,11 +158,13 @@ int construct_device_cert_data(cert_data* cert, ecc_key* device_key, word32 dev_
 	return ret;
 }
 
-int sign_data(const byte* data, word32 data_size, byte* sig, word32* sig_size, ecc_key* key, WC_RNG* rng) {
+int sign_data(const byte *data, word32 data_size, byte *sig, word32 *sig_size, ecc_key *key, WC_RNG *rng)
+{
 	byte hash_out[WC_SHA256_DIGEST_SIZE];
 	int ret = wc_Sha256Hash(data, data_size, hash_out);
 
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error in doing SHA256 hash");
 		return -1;
 	}
@@ -158,13 +177,15 @@ int sign_data(const byte* data, word32 data_size, byte* sig, word32* sig_size, e
 	return ret;
 }
 
-int verify_data_signature(const byte* data, word32 data_size, const byte* sig, word32 sig_size, ecc_key* key) {
+int verify_data_signature(const byte *data, word32 data_size, const byte *sig, word32 sig_size, ecc_key *key)
+{
 	print_debug("Hashing data...");
 
 	byte hash_out[WC_SHA256_DIGEST_SIZE];
 	int ret = wc_Sha256Hash(data, data_size, hash_out);
 
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error in doing SHA256 hash");
 		return -1;
 	}
@@ -179,19 +200,22 @@ int verify_data_signature(const byte* data, word32 data_size, const byte* sig, w
 
 	print_debug("Stat and ret: %d and %d", stat, ret);
 
-	if (stat != 1 || ret != 0) return -1;
-	else return 0;
+	if (stat != 1 || ret != 0)
+		return -1;
+	else
+		return 0;
 }
 
 /**
  * Creates a hello message containing the device's public key, DH public key,
  * signature of the two and its certificate.
  * This function initializes and sets self_dh_key
-*/
-int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
+ */
+int create_hello(signed_hello_with_cert *msg, int is_ap, ecc_key *self_dh_key)
+{
 	print_info("In create_hello()");
 
-	print_debug("Size of hello struct: %d", (int) sizeof(hello));
+	print_debug("Size of hello struct: %d", (int)sizeof(hello));
 
 	int ret;
 
@@ -202,23 +226,28 @@ int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
 
 	ecc_key self_key;
 
-	if (is_ap) ret = load_ap_private_key(&self_key);
-	else ret = load_comp_private_key(&self_key);
+	if (is_ap)
+		ret = load_ap_private_key(&self_key);
+	else
+		ret = load_comp_private_key(&self_key);
 
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error loading device key: %d", ret);
 		return -1;
 	}
 
 	ret = make_ecc_key(self_dh_key, &rng);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error making DH key: %d", ret);
 		return -1;
 	}
 
 	word32 outLen = COMPR_KEY_BUFSIZE;
 	ret = wc_ecc_export_x963_ex(&self_key, msg->sh.hi.pubkey, &outLen, 1);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error exporting key to buffer: %d", ret);
 		return -1;
 	}
@@ -226,7 +255,8 @@ int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
 
 	outLen = COMPR_KEY_BUFSIZE;
 	ret = wc_ecc_export_x963_ex(self_dh_key, msg->sh.hi.dh_pubkey, &outLen, 1);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error exporting device DH key to buffer: %d", ret);
 		return -1;
 	}
@@ -238,8 +268,9 @@ int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
 	memset(sig_out, 0, ECC_SIG_SIZE);
 	word32 sig_sz = ECC_SIG_SIZE;
 
-	ret = sign_data((byte*) &(msg->sh.hi), (word32) sizeof(msg->sh.hi), sig_out, &sig_sz, &self_key, &rng);
-	if (ret != 0) {
+	ret = sign_data((byte *)&(msg->sh.hi), (word32)sizeof(msg->sh.hi), sig_out, &sig_sz, &self_key, &rng);
+	if (ret != 0)
+	{
 		print_debug("Error signing hello: %d", ret);
 		return -1;
 	}
@@ -262,16 +293,19 @@ int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
 	byte ap_host_cert[] = AP_CERT_SIGNATURE;
 	byte comp_host_cert[] = COMP_CERT_SIGNATURE;
 
-	if (is_ap) {
+	if (is_ap)
+	{
 		memcpy(&(msg->cert_sig), ap_host_cert, sizeof(ap_host_cert));
 		msg->cert_sig_size = sizeof(ap_host_cert);
-	} else {
+	}
+	else
+	{
 		memcpy(&(msg->cert_sig), comp_host_cert, sizeof(comp_host_cert));
 		msg->cert_sig_size = sizeof(comp_host_cert);
 	}
 
-	print_debug("Completed construction of hello message: total size %d", (int) sizeof(signed_hello_with_cert));
-	print_hex_debug((byte *) msg, sizeof(signed_hello_with_cert));
+	print_debug("Completed construction of hello message: total size %d", (int)sizeof(signed_hello_with_cert));
+	print_hex_debug((byte *)msg, sizeof(signed_hello_with_cert));
 
 	return ret;
 }
@@ -281,14 +315,14 @@ int create_hello(signed_hello_with_cert* msg, int is_ap, ecc_key* self_dh_key) {
  * This function initializes and sets a shared key
  * using the sender public DH key from the message packet,
  * and it's own DH key passed as a parameter
-*/
+ */
 int verify_hello(
-	signed_hello_with_cert* msg,
-	byte* shared_key, word32* shared_key_sz,
-	ecc_key* self_dh_key,
+	signed_hello_with_cert *msg,
+	byte *shared_key, word32 *shared_key_sz,
+	ecc_key *self_dh_key,
 	word32 sender_device_id, // Component ID or AP tag
-	ecc_key* sender_pubkey
-) {
+	ecc_key *sender_pubkey)
+{
 	print_info("In verify_hello()");
 
 	int ret;
@@ -298,7 +332,8 @@ int verify_hello(
 
 	ecc_key host_pubkey;
 	ret = load_host_public_key(&host_pubkey);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error loading Host key: %d", ret);
 		return -1;
 	}
@@ -306,11 +341,12 @@ int verify_hello(
 	print_debug("Loading sender public key from msg");
 
 	ret = wc_ecc_import_x963((msg->sh).hi.pubkey, COMPR_KEY_SIZE, sender_pubkey);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error sender public key: %d", ret);
 		return -1;
 	}
-	
+
 	// int check_result = wc_ecc_check_key(sender_pubkey);
 
 	// if (check_result == MP_OKAY)
@@ -326,7 +362,8 @@ int verify_hello(
 
 	ecc_key sender_dh_pubkey;
 	ret = wc_ecc_import_x963((msg->sh).hi.dh_pubkey, COMPR_KEY_SIZE, &sender_dh_pubkey);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error loading sender DH public key: %d", ret);
 		return -1;
 	}
@@ -345,11 +382,11 @@ int verify_hello(
 	print_debug("Verifying sender Hello signature");
 
 	ret = verify_data_signature(
-		(byte*) &(msg->sh.hi), (word32) sizeof(msg->sh.hi),
-		(byte*) &(msg->sh.hello_sig), (word32) msg->sh.hello_sig_size,
-		sender_pubkey
-	);
-	if (ret != 0) {
+		(byte *)&(msg->sh.hi), (word32)sizeof(msg->sh.hi),
+		(byte *)&(msg->sh.hello_sig), (word32)msg->sh.hello_sig_size,
+		sender_pubkey);
+	if (ret != 0)
+	{
 		print_debug("Failed to verify sender signature of hello");
 		return -1;
 	}
@@ -360,7 +397,8 @@ int verify_hello(
 
 	cert_data cert;
 	ret = construct_device_cert_data(&cert, sender_pubkey, sender_device_id);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Failed to construct certificate");
 		return -1;
 	}
@@ -368,16 +406,16 @@ int verify_hello(
 	print_debug("Verifying sender certificate with host key...");
 
 	ret = verify_data_signature(
-		(byte*) &cert, CERT_DATA_SIZE,
-		msg->cert_sig, (word32) msg->cert_sig_size,
-		&host_pubkey
-	);
-	if (ret != 0) {
-        print_debug("Signature verification failed");
-        return -1;
-    }
+		(byte *)&cert, CERT_DATA_SIZE,
+		msg->cert_sig, (word32)msg->cert_sig_size,
+		&host_pubkey);
+	if (ret != 0)
+	{
+		print_debug("Signature verification failed");
+		return -1;
+	}
 
-    print_debug("Successfully verified sender hello");
+	print_debug("Successfully verified sender hello");
 
 	print_debug("Creating shared DH key");
 
@@ -388,9 +426,9 @@ int verify_hello(
 		self_dh_key,
 		&sender_dh_pubkey,
 		shared_key,
-		shared_key_sz
-	);
-	if (ret != 0) {
+		shared_key_sz);
+	if (ret != 0)
+	{
 		print_debug("Error creating shared key: %d", ret);
 		return -1;
 	}
@@ -398,10 +436,11 @@ int verify_hello(
 	print_debug("Created shared DH key of size %d: ", *shared_key_sz);
 	print_hex_debug(shared_key, *shared_key_sz);
 
-    return 0;
+	return 0;
 }
 
-int simulate_handshake() {
+int simulate_handshake()
+{
 	WC_RNG rng;
 	wc_InitRng(&rng);
 
@@ -413,7 +452,8 @@ int simulate_handshake() {
 	signed_hello_with_cert msg;
 
 	ret = create_hello(&msg, 1, &ap_dh_key);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error creating signed ap hello with cert");
 		return -1;
 	}
@@ -440,9 +480,9 @@ int simulate_handshake() {
 		&msg,
 		comp_shared_key, &comp_shared_key_size,
 		&comp_dh_key, AP_TAG,
-		&sender_pubkey_for_comp
-	);
-	if (ret != 0) {
+		&sender_pubkey_for_comp);
+	if (ret != 0)
+	{
 		print_debug("Failed to verify ap hello");
 		return -1;
 	}
@@ -451,7 +491,8 @@ int simulate_handshake() {
 
 	ecc_key comp_key;
 	ret = load_comp_private_key(&comp_key);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error loading component key: %d", ret);
 		return -1;
 	}
@@ -461,10 +502,11 @@ int simulate_handshake() {
 	byte comp_chal_sig_out[ECC_SIG_SIZE];
 	word32 comp_chal_sig_sz = ECC_SIG_SIZE;
 
-	ret = sign_data((byte*) &(msg.sh.hi.dh_pubkey), COMPR_KEY_SIZE, comp_chal_sig_out, &comp_chal_sig_sz, &comp_key, &rng);
-	if (ret != 0) {
+	ret = sign_data((byte *)&(msg.sh.hi.dh_pubkey), COMPR_KEY_SIZE, comp_chal_sig_out, &comp_chal_sig_sz, &comp_key, &rng);
+	if (ret != 0)
+	{
 		print_debug("Error signing AP DH pubkey with component key: %d", ret);
-		return -1; 
+		return -1;
 	}
 
 	print_debug("Setting challenge signature in response struct");
@@ -473,7 +515,7 @@ int simulate_handshake() {
 	memcpy(resp.chal_sig, comp_chal_sig_out, comp_chal_sig_sz);
 	resp.chal_sig_size = comp_chal_sig_sz;
 
-	// <-- Component sends this to AP 
+	// <-- Component sends this to AP
 
 	// AP verifies component hello along with the challenge signature, derives the shared key
 
@@ -491,30 +533,31 @@ int simulate_handshake() {
 		&(resp.shc),
 		ap_shared_key, &ap_shared_key_size,
 		&ap_dh_key, COMPONENT_ID,
-		&sender_pubkey_for_ap
-	);
-	if (ret != 0) {
+		&sender_pubkey_for_ap);
+	if (ret != 0)
+	{
 		print_debug("Failed to verify component hello");
 		return -1;
 	}
 
 	print_debug("AP verifying challenge signature from component");
 	ret = verify_data_signature(
-		(byte*) msg.sh.hi.dh_pubkey, COMPR_KEY_SIZE,
+		(byte *)msg.sh.hi.dh_pubkey, COMPR_KEY_SIZE,
 		resp.chal_sig, resp.chal_sig_size,
-		&sender_pubkey_for_ap
-	);
-	if (ret != 0) {
-        print_debug("Signature verification failed");
-        return -1;
-    }
+		&sender_pubkey_for_ap);
+	if (ret != 0)
+	{
+		print_debug("Signature verification failed");
+		return -1;
+	}
 
 	print_debug("AP successfully verified component challenge signature");
 
 	// AP now signs component's DH pubkey as its challenge response
 	ecc_key ap_key;
 	ret = load_ap_private_key(&ap_key);
-	if (ret != 0) {
+	if (ret != 0)
+	{
 		print_debug("Error loading AP key: %d", ret);
 		return -1;
 	}
@@ -524,10 +567,11 @@ int simulate_handshake() {
 	byte ap_chal_sig_out[ECC_SIG_SIZE];
 	word32 ap_chal_sig_sz = ECC_SIG_SIZE;
 
-	ret = sign_data((byte*) &(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE, ap_chal_sig_out, &ap_chal_sig_sz, &ap_key, &rng);
-	if (ret != 0) {
+	ret = sign_data((byte *)&(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE, ap_chal_sig_out, &ap_chal_sig_sz, &ap_key, &rng);
+	if (ret != 0)
+	{
 		print_debug("Error signing component DH pubkey with AP key: %d", ret);
-		return -1; 
+		return -1;
 	}
 
 	print_debug("Setting challenge signature in response struct");
@@ -543,14 +587,14 @@ int simulate_handshake() {
 	print_debug("Component verifying signed challenge from AP");
 
 	ret = verify_data_signature(
-		(byte*) &(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE,
+		(byte *)&(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE,
 		sc_msg.chal_sig, sc_msg.chal_sig_size,
-		&sender_pubkey_for_comp
-	);
-	if (ret != 0) {
-        print_debug("Signature verification failed");
-        return -1;
-    }
+		&sender_pubkey_for_comp);
+	if (ret != 0)
+	{
+		print_debug("Signature verification failed");
+		return -1;
+	}
 
 	print_debug("Component successfully verified AP challenge signature");
 
@@ -559,6 +603,7 @@ int simulate_handshake() {
 	return 1;
 }
 
-int main() {
+int main()
+{
 	return simulate_handshake();
 }
