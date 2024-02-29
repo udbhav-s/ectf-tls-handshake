@@ -1,5 +1,5 @@
 # Simulated TLS handshake protocol implementation
-This is a mutual authentication protocol for eCTF 2024 where an application processor (AP) and a component must verify each other, based on certificates that are generated for both at build-time and signed by a host. 
+This is a mutual authentication protocol for eCTF 2024 where an embedded application processor (AP) and a component must verify each other, based on certificates that are generated for both at build-time and signed by a host. 
 
 Both AP and component will use ephemeral Diffie-Hellman for forward secrecy, which involves generating an additional ECC keypair on each side following an exchange of those public keys and combining them to derive a shared secret.   
 
