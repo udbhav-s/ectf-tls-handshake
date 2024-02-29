@@ -63,6 +63,12 @@ typedef struct signed_hello_with_cert_and_chal {
 	word32 chal_sig_size;
 } signed_hello_with_cert_and_chal;
 
+// Sent back by the AP to the Component as AP's challenge-response to finish the verification
+typedef struct signed_chal {
+	byte chal_sig[ECC_SIG_SIZE];
+	word32 chal_sig_size;
+} signed_chal;
+
 int make_ecc_key(ecc_key* key, WC_RNG* rng) {
 	int ret = wc_ecc_init(key);
 	if (ret == 0) {
@@ -280,9 +286,10 @@ int verify_hello(
 	signed_hello_with_cert* msg,
 	byte* shared_key, word32* shared_key_sz,
 	ecc_key* self_dh_key,
-	word32 sender_device_id // Component ID or AP tag
+	word32 sender_device_id, // Component ID or AP tag
+	ecc_key* sender_pubkey
 ) {
-	print_info("In verify_ap_hello()");
+	print_info("In verify_hello()");
 
 	int ret;
 
@@ -298,14 +305,13 @@ int verify_hello(
 
 	print_debug("Loading sender public key from msg");
 
-	ecc_key sender_pubkey;
-	ret = wc_ecc_import_x963((msg->sh).hi.pubkey, COMPR_KEY_SIZE, &sender_pubkey);
+	ret = wc_ecc_import_x963((msg->sh).hi.pubkey, COMPR_KEY_SIZE, sender_pubkey);
 	if (ret != 0) {
 		print_debug("Error sender public key: %d", ret);
 		return -1;
 	}
 	
-	// int check_result = wc_ecc_check_key(&sender_pubkey);
+	// int check_result = wc_ecc_check_key(sender_pubkey);
 
 	// if (check_result == MP_OKAY)
 	// {
@@ -341,7 +347,7 @@ int verify_hello(
 	ret = verify_data_signature(
 		(byte*) &(msg->sh.hi), (word32) sizeof(msg->sh.hi),
 		(byte*) &(msg->sh.hello_sig), (word32) msg->sh.hello_sig_size,
-		&sender_pubkey
+		sender_pubkey
 	);
 	if (ret != 0) {
 		print_debug("Failed to verify sender signature of hello");
@@ -353,7 +359,7 @@ int verify_hello(
 	// Load device id
 
 	cert_data cert;
-	ret = construct_device_cert_data(&cert, &sender_pubkey, sender_device_id);
+	ret = construct_device_cert_data(&cert, sender_pubkey, sender_device_id);
 	if (ret != 0) {
 		print_debug("Failed to construct certificate");
 		return -1;
@@ -425,10 +431,16 @@ int simulate_handshake() {
 	byte comp_shared_key[SHARED_KEY_SIZE];
 	word32 comp_shared_key_size = SHARED_KEY_SIZE;
 
+	// This is the AP's public key as parsed by the component from its hello
+	// Saved for verifying challenge response signature later
+	ecc_key sender_pubkey_for_comp;
+	wc_ecc_init(&sender_pubkey_for_comp);
+
 	ret = verify_hello(
 		&msg,
 		comp_shared_key, &comp_shared_key_size,
-		&comp_dh_key, AP_TAG
+		&comp_dh_key, AP_TAG,
+		&sender_pubkey_for_comp
 	);
 	if (ret != 0) {
 		print_debug("Failed to verify ap hello");
@@ -444,12 +456,12 @@ int simulate_handshake() {
 		return -1;
 	}
 
-	print_debug("Signing AP dh key as challenge");
+	print_debug("Component signing AP dh key as challenge");
 
-	byte ap_chal_sig_out[ECC_SIG_SIZE];
-	word32 ap_chal_sig_sz = ECC_SIG_SIZE;
+	byte comp_chal_sig_out[ECC_SIG_SIZE];
+	word32 comp_chal_sig_sz = ECC_SIG_SIZE;
 
-	ret = sign_data((byte*) &(msg.sh.hi.dh_pubkey), COMPR_KEY_SIZE, ap_chal_sig_out, &ap_chal_sig_sz, &comp_key, &rng);
+	ret = sign_data((byte*) &(msg.sh.hi.dh_pubkey), COMPR_KEY_SIZE, comp_chal_sig_out, &comp_chal_sig_sz, &comp_key, &rng);
 	if (ret != 0) {
 		print_debug("Error signing AP DH pubkey with component key: %d", ret);
 		return -1; 
@@ -458,8 +470,8 @@ int simulate_handshake() {
 	print_debug("Setting challenge signature in response struct");
 
 	memset(resp.chal_sig, 0, ECC_SIG_SIZE);
-	memcpy(resp.chal_sig, ap_chal_sig_out, ap_chal_sig_sz);
-	resp.chal_sig_size = ap_chal_sig_sz;
+	memcpy(resp.chal_sig, comp_chal_sig_out, comp_chal_sig_sz);
+	resp.chal_sig_size = comp_chal_sig_sz;
 
 	// <-- Component sends this to AP 
 
@@ -468,17 +480,81 @@ int simulate_handshake() {
 	byte ap_shared_key[SHARED_KEY_SIZE];
 	word32 ap_shared_key_size = SHARED_KEY_SIZE;
 
+	// This is the component's pubkey as parsed by the AP from the response
+	// Saved for verifying challenge response signature
+	ecc_key sender_pubkey_for_ap;
+	wc_ecc_init(&sender_pubkey_for_ap);
+
 	print_debug("AP verifying component hello: ");
 
 	ret = verify_hello(
 		&(resp.shc),
 		ap_shared_key, &ap_shared_key_size,
-		&ap_dh_key, COMPONENT_ID
+		&ap_dh_key, COMPONENT_ID,
+		&sender_pubkey_for_ap
 	);
 	if (ret != 0) {
 		print_debug("Failed to verify component hello");
 		return -1;
 	}
+
+	print_debug("AP verifying challenge signature from component");
+	ret = verify_data_signature(
+		(byte*) msg.sh.hi.dh_pubkey, COMPR_KEY_SIZE,
+		resp.chal_sig, resp.chal_sig_size,
+		&sender_pubkey_for_ap
+	);
+	if (ret != 0) {
+        print_debug("Signature verification failed");
+        return -1;
+    }
+
+	print_debug("AP successfully verified component challenge signature");
+
+	// AP now signs component's DH pubkey as its challenge response
+	ecc_key ap_key;
+	ret = load_ap_private_key(&ap_key);
+	if (ret != 0) {
+		print_debug("Error loading AP key: %d", ret);
+		return -1;
+	}
+
+	print_debug("AP signing Component dh key as challenge");
+
+	byte ap_chal_sig_out[ECC_SIG_SIZE];
+	word32 ap_chal_sig_sz = ECC_SIG_SIZE;
+
+	ret = sign_data((byte*) &(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE, ap_chal_sig_out, &ap_chal_sig_sz, &ap_key, &rng);
+	if (ret != 0) {
+		print_debug("Error signing component DH pubkey with AP key: %d", ret);
+		return -1; 
+	}
+
+	print_debug("Setting challenge signature in response struct");
+
+	signed_chal sc_msg;
+
+	memset(sc_msg.chal_sig, 0, ECC_SIG_SIZE);
+	memcpy(sc_msg.chal_sig, ap_chal_sig_out, ap_chal_sig_sz);
+	sc_msg.chal_sig_size = ap_chal_sig_sz;
+
+	// --> AP sends sc_msg to component
+
+	print_debug("Component verifying signed challenge from AP");
+
+	ret = verify_data_signature(
+		(byte*) &(resp.shc.sh.hi.dh_pubkey), COMPR_KEY_SIZE,
+		sc_msg.chal_sig, sc_msg.chal_sig_size,
+		&sender_pubkey_for_comp
+	);
+	if (ret != 0) {
+        print_debug("Signature verification failed");
+        return -1;
+    }
+
+	print_debug("Component successfully verified AP challenge signature");
+
+	print_debug("HANDSHAKE COMPLETE :))))");
 
 	return 1;
 }
