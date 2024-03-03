@@ -39,7 +39,7 @@ The handshake is complete.
 # build wolfSSL
 ```
 # go to wolfssl directory (eg. wolfssl-5.6.6)
-sudo ./configure --enable-staticmemory --enable-ecc --enable-ecccustcurves=all --enable-fastmath --enable-compkey --enable-ed25519 --disable-harden CFLAGS="-DWOLFSSL_PUBLIC_MP"
+sudo ./configure --enable-staticmemory --enable-ecc --enable-ecccustcurves=all --enable-fastmath --enable-compkey --enable-ed25519 --disable-harden --enable-curve25519 CFLAGS="-DWOLFSSL_PUBLIC_MP"
 sudo make
 sudo make install
 ```
