@@ -20,7 +20,9 @@ Component generates it's own DH keypair and derives `shared_key` using `ap_dh_pu
 2) `comp_dh_pubkey`
 3) Signature of (1) and (2) with `comp_pubkey`
 4) Certificate: signature of (`comp_pubkey` + `comp_id`) by `host_pubkey`
-5) Signature of `ap_dh_pubkey` using `comp_pubkey` (this additional parameter is the challenge response from component's side)
+
+Component also sends (separately due to package size restrictions)
+* Signature of `ap_dh_pubkey` using `comp_pubkey` (this additional parameter is the challenge response from component's side)
 
 AP receives message, validates the certificate & message signature, and derives the `shared_key` in a similar fashion.   
 

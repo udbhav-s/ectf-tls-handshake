@@ -3,7 +3,9 @@
     "settings.h": "c",
     "ecc.h": "c",
     "sha256.h": "c",
-    "hash.h": "c"
+    "hash.h": "c",
+    "crypto_test.h": "c",
+    "host_messaging.h": "c"
   },
   "C_Cpp_Runner.msvcBatchPath": "",
   "C_Cpp_Runner.cCompilerPath": "gcc",
