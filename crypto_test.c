@@ -410,9 +410,9 @@ int simulate_handshake()
 	// AP creates hello
 
 	curve25519_key ap_dh_key;
-	signed_hello_with_cert msg;
+	signed_hello_with_cert ap_hello;
 
-	ret = create_hello(&msg, 1, &ap_dh_key);
+	ret = create_hello(&ap_hello, 1, &ap_dh_key);
 	if (ret != 0)
 	{
 		print_debug("Error creating signed ap hello with cert");
@@ -425,8 +425,8 @@ int simulate_handshake()
 	// key
 	curve25519_key comp_dh_key;
 	print_debug("Creating hello for component");
-	signed_hello_with_cert resp;
-	ret = create_hello(&resp, 0, &comp_dh_key);
+	signed_hello_with_cert comp_hello;
+	ret = create_hello(&comp_hello, 0, &comp_dh_key);
 
 	// Component verifies hello and derives its shared key
 
@@ -435,11 +435,11 @@ int simulate_handshake()
 
 	// This is the AP's public key as parsed by the component from its hello
 	// Saved for verifying challenge response signature later
-	ed25519_key sender_pubkey_for_comp;
-	wc_ed25519_init(&sender_pubkey_for_comp);
+	ed25519_key loaded_ap_pubkey;
+	wc_ed25519_init(&loaded_ap_pubkey);
 
-	ret = verify_hello(&msg, comp_shared_key, &comp_shared_key_size,
-					   &comp_dh_key, AP_TAG, &sender_pubkey_for_comp);
+	ret = verify_hello(&ap_hello, comp_shared_key, &comp_shared_key_size,
+					   &comp_dh_key, AP_TAG, &loaded_ap_pubkey);
 	if (ret != 0)
 	{
 		print_debug("Failed to verify ap hello");
@@ -461,7 +461,7 @@ int simulate_handshake()
 	byte comp_chal_sig_out[ED25519_SIG_SIZE];
 	word32 comp_chal_sig_sz = ED25519_SIG_SIZE;
 
-	ret = sign_data((byte *)&(msg.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
+	ret = sign_data((byte *)&(ap_hello.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
 					comp_chal_sig_out, &comp_chal_sig_sz, &comp_key);
 	if (ret != 0)
 	{
@@ -471,11 +471,11 @@ int simulate_handshake()
 
 	print_debug("Creating response signature struct");
 
-	signed_chal resp_chal;
+	signed_chal comp_sc;
 
-	memset(resp_chal.chal_sig, 0, ED25519_SIG_SIZE);
-	memcpy(resp_chal.chal_sig, comp_chal_sig_out, comp_chal_sig_sz);
-	resp_chal.chal_sig_size = comp_chal_sig_sz;
+	memset(comp_sc.chal_sig, 0, ED25519_SIG_SIZE);
+	memcpy(comp_sc.chal_sig, comp_chal_sig_out, comp_chal_sig_sz);
+	comp_sc.chal_sig_size = comp_chal_sig_sz;
 
 	// <-- Component sends resp and resp_chal to AP
 
@@ -487,13 +487,13 @@ int simulate_handshake()
 
 	// This is the component's pubkey as parsed by the AP from the response
 	// Saved for verifying challenge response signature
-	ed25519_key sender_pubkey_for_ap;
-	wc_ed25519_init(&sender_pubkey_for_ap);
+	ed25519_key loaded_comp_pubkey;
+	wc_ed25519_init(&loaded_comp_pubkey);
 
 	print_debug("AP verifying component hello: ");
 
-	ret = verify_hello(&resp, ap_shared_key, &ap_shared_key_size, &ap_dh_key,
-					   COMPONENT_ID, &sender_pubkey_for_ap);
+	ret = verify_hello(&comp_hello, ap_shared_key, &ap_shared_key_size, &ap_dh_key,
+					   COMPONENT_ID, &loaded_comp_pubkey);
 	if (ret != 0)
 	{
 		print_debug("Failed to verify component hello");
@@ -501,9 +501,9 @@ int simulate_handshake()
 	}
 
 	print_debug("AP verifying challenge signature from component");
-	ret = verify_data_signature((byte *)msg.sh.hi.dh_pubkey, CURVE25519_PUB_KEY_SIZE,
-								resp_chal.chal_sig, resp_chal.chal_sig_size,
-								&sender_pubkey_for_ap);
+	ret = verify_data_signature((byte *)ap_hello.sh.hi.dh_pubkey, CURVE25519_PUB_KEY_SIZE,
+								comp_sc.chal_sig, comp_sc.chal_sig_size,
+								&loaded_comp_pubkey);
 	if (ret != 0)
 	{
 		print_debug("Signature verification failed");
@@ -526,7 +526,7 @@ int simulate_handshake()
 	byte ap_chal_sig_out[ED25519_SIG_SIZE];
 	word32 ap_chal_sig_sz = ED25519_SIG_SIZE;
 
-	ret = sign_data((byte *)&(resp.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
+	ret = sign_data((byte *)&(comp_hello.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
 					ap_chal_sig_out, &ap_chal_sig_sz, &ap_key);
 	if (ret != 0)
 	{
@@ -536,19 +536,19 @@ int simulate_handshake()
 
 	print_debug("Setting challenge signature in response struct");
 
-	signed_chal sc_msg;
+	signed_chal ap_sc;
 
-	memset(sc_msg.chal_sig, 0, ED25519_SIG_SIZE);
-	memcpy(sc_msg.chal_sig, ap_chal_sig_out, ap_chal_sig_sz);
-	sc_msg.chal_sig_size = ap_chal_sig_sz;
+	memset(ap_sc.chal_sig, 0, ED25519_SIG_SIZE);
+	memcpy(ap_sc.chal_sig, ap_chal_sig_out, ap_chal_sig_sz);
+	ap_sc.chal_sig_size = ap_chal_sig_sz;
 
 	// --> AP sends sc_msg to component
 
 	print_debug("Component verifying signed challenge from AP");
 
-	ret = verify_data_signature((byte *)&(resp.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
-								sc_msg.chal_sig, sc_msg.chal_sig_size,
-								&sender_pubkey_for_comp);
+	ret = verify_data_signature((byte *)&(comp_hello.sh.hi.dh_pubkey), CURVE25519_PUB_KEY_SIZE,
+								ap_sc.chal_sig, ap_sc.chal_sig_size,
+								&loaded_ap_pubkey);
 	if (ret != 0)
 	{
 		print_debug("Signature verification failed");
